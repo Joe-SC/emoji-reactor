@@ -114,32 +114,70 @@ The application uses two MediaPipe solutions:
 
 ### Adding a New Emoji State
 
-The refactored architecture makes it easy to add new states:
+The type-safe, config-driven architecture makes it easy to add new states:
 
-1. **Add state definition** to `EmojiConfig.__init__()` in `emoji_reactor.py`:
+1. **Update the StateName type** in `emoji_reactor.py`:
    ```python
-   {
-       'name': 'PEACE_SIGN',
-       'image_file': 'peace.png',
-       'emoji': '✌️',
-       'priority': 35,  # Between ONE_HAND_UP and HANDS_UP
-       'detector': 'pose'
-   }
+   StateName = Literal['HANDS_UP', 'ONE_HAND_UP', 'SMILING', 'STRAIGHT_FACE', 'PEACE_SIGN']
    ```
 
-2. **Add detection logic** to `StateDetector._check_pose_state()`:
+2. **Add state definition** to `DefaultEmojiConfig.__init__()` in `emoji_reactor.py`:
+   ```python
+   EmojiState(
+       name='PEACE_SIGN',
+       image_file='peace.png',
+       emoji='✌️',
+       priority=35,  # Between ONE_HAND_UP and HANDS_UP
+       detector='pose'
+   )
+   ```
+
+3. **Add detection logic** to `StateDetector._check_pose_state()`:
    ```python
    # Check for peace sign
    if self._is_peace_sign(landmarks):
        return 'PEACE_SIGN'
    ```
 
-3. **Add the image file** (`peace.png`) to the project directory
+4. **Add the image file** (`peace.png`) to the project directory
 
-That's it! The rest (loading, display, priority handling) is automatic.
+That's it! The dataclass structure, loading, display, and priority handling are all automatic.
+
+### Creating a Custom Configuration
+
+You can create your own emoji configuration by extending the base class:
+
+```python
+class MyEmojiConfig(EmojiConfig):
+    """Custom configuration with my own emojis."""
+
+    def __init__(self):
+        super().__init__()
+
+        # Customize settings
+        self.smile_threshold = 0.30
+        self.window_width = 1024
+        self.window_height = 768
+
+        # Define your own states
+        self.states = [
+            EmojiState(
+                name='HANDS_UP',
+                image_file='my_hands_up.png',
+                emoji='🙌',
+                priority=40,
+                detector='pose'
+            ),
+            # ... more states
+        ]
+
+# Use your custom config
+config = MyEmojiConfig()
+reactor = EmojiReactor(config)
+```
 
 ### Adjusting Smile Sensitivity
-Edit the `smile_threshold` value in `EmojiConfig.__init__()`:
+Edit the `smile_threshold` value in `DefaultEmojiConfig.__init__()` (or create a custom config):
 - Decrease value (e.g., 0.20) if smiles aren't detected
 - Increase value (e.g., 0.30) if false positive smiles occur
 
@@ -174,6 +212,8 @@ Replace the image files with your own:
 
 ### Architecture
 - **Modular class-based design** with clear separation of concerns
+- **Type-safe configuration** using dataclasses and Literal types
+- **Inheritance-based customization** via base EmojiConfig class
 - **Config-driven state management** for easy extensibility
 - **Priority-based detection system** for handling multiple simultaneous states
 
@@ -184,12 +224,18 @@ Replace the image files with your own:
 
 ### Code Structure
 ```
-emoji_reactor.py (365 lines)
-├── EmojiConfig (68 lines) - Configuration and state definitions
-├── ImageManager (35 lines) - Image loading and management
-├── StateDetector (118 lines) - Pose and face detection logic
-├── EmojiReactor (120 lines) - Main application orchestration
-└── main() (18 lines) - Entry point
+emoji_reactor.py (~365 lines)
+├── Type Definitions
+│   ├── StateName - Literal type for valid state names
+│   ├── DetectorType - Literal type for detector types
+│   ├── DEFAULT_STATE - Constant for fallback state
+│   └── EmojiState - Dataclass for type-safe state definitions
+├── EmojiConfig - Base configuration class (extensible)
+├── DefaultEmojiConfig - Default cat-themed configuration
+├── ImageManager - Image loading and management
+├── StateDetector - Pose and face detection logic
+├── EmojiReactor - Main application orchestration
+└── main() - Entry point
 ```
 
 ## Dependencies
