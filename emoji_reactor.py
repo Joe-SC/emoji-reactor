@@ -119,28 +119,28 @@ class DefaultEmojiConfig(EmojiConfig):
         self.states: list[EmojiState] = [
             EmojiState(
                 name='HANDS_UP',
-                image_file='aircat.png',
+                image_file='pics/aircat.png',
                 emoji='🙌',
                 priority=40,
                 detector='pose'
             ),
             EmojiState(
                 name='THINKING',
-                image_file='hmm.png',
+                image_file='pics/hmm.png',
                 emoji='🤔',
                 priority=30,
                 detector='pose'
             ),
             EmojiState(
                 name='CATXD',
-                image_file='catxd.png',
+                image_file='pics/catxd.png',
                 emoji='😂',
                 priority=20,
                 detector='face'
             ),
             EmojiState(
                 name='STRAIGHT_FACE',
-                image_file='toletole.png',
+                image_file='pics/toletole.png',
                 emoji='😐',
                 priority=10,
                 detector='face'
