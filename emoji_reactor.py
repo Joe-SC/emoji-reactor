@@ -13,23 +13,28 @@ mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
 # Configuration
-SMILE_THRESHOLD = 0.35
+# SMILE_THRESHOLD = 0.35
+SMILE_THRESHOLD = 0.25
 WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 450
 EMOJI_WINDOW_SIZE = (WINDOW_WIDTH, WINDOW_HEIGHT)
 
+SMILE_FILE = "catxd.png"
+PLAIN_FILE = "toletole.png"
+AIR_FILE = "aircat.png"
+
 # Load emoji images
 try:
-    smiling_emoji = cv2.imread("smile.jpg")
-    straight_face_emoji = cv2.imread("plain.png")
-    hands_up_emoji = cv2.imread("air.jpg")
+    smiling_emoji = cv2.imread(SMILE_FILE)
+    straight_face_emoji = cv2.imread(PLAIN_FILE)
+    hands_up_emoji = cv2.imread(AIR_FILE)
 
     if smiling_emoji is None:
-        raise FileNotFoundError("smile.jpg not found")
+        raise FileNotFoundError(f"{SMILE_FILE} not found")
     if straight_face_emoji is None:
-        raise FileNotFoundError("plain.png not found")
+        raise FileNotFoundError(f"{PLAIN_FILE} not found")
     if hands_up_emoji is None:
-        raise FileNotFoundError("air.jpg not found")
+        raise FileNotFoundError(f"{AIR_FILE} not found")
 
     # Resize emojis
     smiling_emoji = cv2.resize(smiling_emoji, EMOJI_WINDOW_SIZE)
