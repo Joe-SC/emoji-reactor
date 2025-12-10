@@ -6,16 +6,33 @@ This module provides a config-driven emoji reaction system that detects user pos
 and facial expressions using MediaPipe, then displays corresponding emoji images.
 
 Classes:
-    EmojiConfig: Configuration holder for application settings and state definitions
+    EmojiState: Type-safe dataclass representing a single emoji state
+    EmojiConfig: Base configuration class for custom configurations
+    DefaultEmojiConfig: Default cat-configs (inherits EmojiConfig)
     ImageManager: Handles loading and management of emoji images
     StateDetector: Detects user state based on pose and facial landmarks
     EmojiReactor: Main application orchestrator
 
+Type Safety:
+    - StateName: Literal type for valid state names
+    - DetectorType: Literal type for detector types ('pose' or 'face')
+    - EmojiState: Dataclass with full type hints for autocomplete and validation
+
+Configuration:
+    The application uses DefaultEmojiConfig by default. To customize:
+    1. Create a subclass of EmojiConfig
+    2. Override __init__ and set custom states/thresholds
+    3. Pass your config to EmojiReactor(your_config)
+
 Adding new states:
-    1. Add state definition to EmojiConfig.states list with priority
-    2. Add detection logic to StateDetector (if needed)
-    3. Add corresponding emoji image file to project directory
+    1. Add state name to StateName Literal type
+    2. Add EmojiState instance to your config's states list with priority
+    3. Add detection logic to StateDetector (if needed)
+    4. Add corresponding emoji image file to project directory
 """
+
+from dataclasses import dataclass
+from typing import Literal
 
 import cv2
 import mediapipe as mp
@@ -26,60 +43,109 @@ mp_pose = mp.solutions.pose
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
+# Type definitions for type safety
+StateName = Literal['HANDS_UP', 'THINKING', 'CATXD', 'STRAIGHT_FACE']
+DetectorType = Literal['pose', 'face']
+DEFAULT_STATE = "STRAIGHT_FACE"
+
+@dataclass
+class EmojiState:
+    """Represents a single emoji state configuration."""
+    name: StateName
+    image_file: str
+    emoji: str
+    priority: int
+    detector: DetectorType
+
 
 class EmojiConfig:
-    """Configuration holder for the Emoji Reactor application."""
+    """
+    Base configuration class for the Emoji Reactor application.
+
+    Override this class to create custom configurations with different
+    settings, emoji images, or detection states.
+
+    Example:
+        class MyCustomConfig(EmojiConfig):
+            def __init__(self):
+                super().__init__()
+                self.smile_threshold = 0.30  # More sensitive
+                self.states = [...]  # Your custom states
+    """
 
     def __init__(self):
-        # Window settings
-        self.window_width = 720
-        self.window_height = 450
+        # Window settings (can be overridden in subclasses)
+        self.window_width: int = 720
+        self.window_height: int = 450
 
-        # Detection thresholds
-        self.smile_threshold = 0.25
-        self.min_detection_confidence = 0.5
-        self.min_tracking_confidence = 0.5
+        # Detection thresholds (can be overridden in subclasses)
+        self.smile_threshold: float = 0.25
+        self.min_detection_confidence: float = 0.5
+        self.min_tracking_confidence: float = 0.5
+
+        # State definitions (should be set in subclasses)
+        self.states: list[EmojiState] = []
+
+    def get_state_by_name(self, name: str) -> EmojiState | None:
+        """Get state config by name."""
+        return next((s for s in self.states if s.name == name), None)
+
+    def get_sorted_states(self) -> list[EmojiState]:
+        """Get states sorted by priority (highest first)."""
+        return sorted(self.states, key=lambda x: x.priority, reverse=True)
+
+
+class DefaultEmojiConfig(EmojiConfig):
+    """
+    Default emoji configuration with cats.
+
+    This is the standard configuration used by the application.
+
+    Example of creating a custom config:
+        class MySensitiveConfig(EmojiConfig):
+            def __init__(self):
+                super().__init__()
+                self.smile_threshold = 0.15  # More sensitive to smiles
+                self.states = [
+                    EmojiState('CATXD', 'my_smile.png', '😁', 20, 'face'),
+                    EmojiState('STRAIGHT_FACE', 'my_plain.png', '😑', 10, 'face'),
+                ]
+    """
+
+    def __init__(self):
+        super().__init__()
 
         # State definitions with priority (higher = higher priority)
-        # Each state: name, image_file, emoji_unicode, priority, detection_type
-        self.states = [
-            {
-                'name': 'HANDS_UP',
-                'image_file': 'aircat.png',
-                'emoji': '🙌',
-                'priority': 40,
-                'detector': 'pose'
-            },
-            {
-                'name': 'ONE_HAND_UP',
-                'image_file': 'hmm.png',
-                'emoji': '✋',
-                'priority': 30,
-                'detector': 'pose'
-            },
-            {
-                'name': 'SMILING',
-                'image_file': 'catxd.png',
-                'emoji': '😊',
-                'priority': 20,
-                'detector': 'face'
-            },
-            {
-                'name': 'STRAIGHT_FACE',
-                'image_file': 'toletole.png',
-                'emoji': '😐',
-                'priority': 10,
-                'detector': 'face'
-            }
+        self.states: list[EmojiState] = [
+            EmojiState(
+                name='HANDS_UP',
+                image_file='aircat.png',
+                emoji='🙌',
+                priority=40,
+                detector='pose'
+            ),
+            EmojiState(
+                name='THINKING',
+                image_file='hmm.png',
+                emoji='🤔',
+                priority=30,
+                detector='pose'
+            ),
+            EmojiState(
+                name='CATXD',
+                image_file='catxd.png',
+                emoji='😂',
+                priority=20,
+                detector='face'
+            ),
+            EmojiState(
+                name='STRAIGHT_FACE',
+                image_file='toletole.png',
+                emoji='😐',
+                priority=10,
+                detector='face'
+            )
         ]
-
-    def get_state_by_name(self, name):
-        """Get state config by name."""
-        return next((s for s in self.states if s['name'] == name), None)
-
-    def get_sorted_states(self):
-        """Get states sorted by priority (highest first)."""
-        return sorted(self.states, key=lambda x: x['priority'], reverse=True)
 
 
 class ImageManager:
@@ -93,8 +159,8 @@ class ImageManager:
     def load_images(self):
         """Load and resize all emoji images based on config."""
         for state in self.config.states:
-            name = state['name']
-            file_path = state['image_file']
+            name = state.name
+            file_path = state.image_file
 
             image = cv2.imread(file_path)
             if image is None:
@@ -177,7 +243,7 @@ class StateDetector:
 
         # Check one hand up
         if (left_index.y < left_shoulder.y) or (right_index.y < right_shoulder.y):
-            return 'ONE_HAND_UP'
+            return 'THINKING'
 
         return None
 
@@ -185,7 +251,7 @@ class StateDetector:
         """Check for smile vs straight face."""
         results = self.face_mesh.process(frame_rgb)
         if not results.multi_face_landmarks:
-            return 'STRAIGHT_FACE'  # Default
+            return DEFAULT_STATE
 
         for face_landmarks in results.multi_face_landmarks:
             # Landmark indices for mouth corners and lips
@@ -203,30 +269,30 @@ class StateDetector:
             if mouth_width > 0:
                 mouth_aspect_ratio = mouth_height / mouth_width
                 if mouth_aspect_ratio > self.config.smile_threshold:
-                    return 'SMILING'
+                    return 'CATXD'
 
-        return 'STRAIGHT_FACE'
+        return DEFAULT_STATE
 
     def _has_high_priority_pose(self, pose_state):
         """Check if pose state has higher priority than face states."""
         if not pose_state:
             return False
         pose_config = self.config.get_state_by_name(pose_state)
-        return pose_config and pose_config['priority'] >= 30  # Above face states
+        return pose_config and pose_config.priority >= 30  # Above face states
 
     def _get_highest_priority_state(self, detected_states):
         """Return highest priority state from detected states."""
         if not detected_states:
-            return 'STRAIGHT_FACE'  # Default fallback
+            return DEFAULT_STATE
 
         state_priorities = []
         for state_name in detected_states:
             state_config = self.config.get_state_by_name(state_name)
             if state_config:
-                state_priorities.append((state_name, state_config['priority']))
+                state_priorities.append((state_name, state_config.priority))
 
         if not state_priorities:
-            return 'STRAIGHT_FACE'
+            return DEFAULT_STATE
 
         # Return state with highest priority
         return max(state_priorities, key=lambda x: x[1])[0]
@@ -281,7 +347,7 @@ class EmojiReactor:
         """Print expected emoji files."""
         print("\nExpected files:")
         for state in self.config.states:
-            print(f"- {state['image_file']} ({state['emoji']} {state['name']})")
+            print(f"- {state.image_file} ({state.emoji} {state.name})")
 
     def run(self):
         """Main application loop."""
@@ -301,7 +367,7 @@ class EmojiReactor:
             # Get state config and image
             state_config = self.config.get_state_by_name(current_state)
             emoji_image = self.image_manager.get_image(current_state)
-            emoji_name = state_config['emoji'] if state_config else '❓'
+            emoji_name = state_config.emoji if state_config else '❓'
 
             # Prepare camera display
             camera_frame = self._prepare_camera_display(frame, current_state, emoji_name)
@@ -350,8 +416,13 @@ class EmojiReactor:
 
 
 def main():
-    """Entry point for the emoji reactor application."""
-    config = EmojiConfig()
+    """
+    Entry point for the emoji reactor application.
+
+    By default uses DefaultEmojiConfig. To use a custom configuration,
+    create a subclass of EmojiConfig and pass it to EmojiReactor.
+    """
+    config = DefaultEmojiConfig()
     reactor = EmojiReactor(config)
 
     if not reactor.initialize():
