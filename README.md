@@ -2,15 +2,6 @@
 
 A real-time camera-based emoji display application that uses MediaPipe to detect your poses and facial expressions, then displays corresponding emojis in a separate window.
 
-## Features
-
-- **Hand Detection**: Raise both hands above shoulders → displays hands up emoji 🙌
-- **One Hand Detection**: Raise one hand → displays one hand emoji ✋
-- **Smile Detection**: Detects smiling → displays smiling emoji 😊
-- **Default State**: Straight face → displays neutral emoji 😐
-- **Real-time Processing**: Live camera feed with instant emoji reactions
-- **Config-Driven Architecture**: Easily add new emoji states through configuration
-
 ## Requirements
 
 - Python 3.12+
@@ -19,7 +10,7 @@ A real-time camera-based emoji display application that uses MediaPipe to detect
 
 ## Installation
 
-### Option A: Using uv (Recommended)
+### Option A: Using uv (preferred)
 
 1. **Install uv** (if not already installed):
    ```bash
@@ -90,12 +81,12 @@ A real-time camera-based emoji display application that uses MediaPipe to detect
 
 ## How It Works
 
-The application uses a modular, config-driven architecture with four main components:
+The application uses a config-driven architecture with four main components:
 
-1. **EmojiConfig**: Centralized configuration for states, thresholds, and display settings
-2. **ImageManager**: Handles loading and managing emoji images
+1. **EmojiConfig**: Configuration for states, thresholds, and display settings
+2. **ImageManager**: Loads and manages emoji images
 3. **StateDetector**: Uses MediaPipe to detect poses and facial expressions
-4. **EmojiReactor**: Main orchestrator that coordinates detection and display
+4. **EmojiReactor**: Coordinates detection and display
 
 ### MediaPipe Detection
 
@@ -114,7 +105,7 @@ The application uses two MediaPipe solutions:
 
 ### Adding a New Emoji State
 
-The type-safe, config-driven architecture makes it easy to add new states:
+To add a new state:
 
 1. **Update the StateName type** in `emoji_reactor.py`:
    ```python
@@ -141,11 +132,9 @@ The type-safe, config-driven architecture makes it easy to add new states:
 
 4. **Add the image file** (`peace.png`) to the project directory
 
-That's it! The dataclass structure, loading, display, and priority handling are all automatic.
-
 ### Creating a Custom Configuration
 
-You can create your own emoji configuration by extending the base class:
+Extend the base class to create a custom configuration:
 
 ```python
 class MyEmojiConfig(EmojiConfig):
@@ -208,43 +197,8 @@ Replace the image files with your own:
 - Adjust `smile_threshold` in `EmojiConfig` if needed
 - For hands up detection, make sure your arms are clearly visible
 
-## Technical Details
-
-### Architecture
-- **Modular class-based design** with clear separation of concerns
-- **Type-safe configuration** using dataclasses and Literal types
-- **Inheritance-based customization** via base EmojiConfig class
-- **Config-driven state management** for easy extensibility
-- **Priority-based detection system** for handling multiple simultaneous states
-
-### Technologies
-- **OpenCV** - Camera capture and display
-- **MediaPipe** - Pose and Face Mesh detection with 33 pose landmarks and 468 face landmarks
-- **NumPy** - Numerical computing for landmark calculations
-
-### Code Structure
-```
-emoji_reactor.py (~365 lines)
-├── Type Definitions
-│   ├── StateName - Literal type for valid state names
-│   ├── DetectorType - Literal type for detector types
-│   ├── DEFAULT_STATE - Constant for fallback state
-│   └── EmojiState - Dataclass for type-safe state definitions
-├── EmojiConfig - Base configuration class (extensible)
-├── DefaultEmojiConfig - Default cat-themed configuration
-├── ImageManager - Image loading and management
-├── StateDetector - Pose and face detection logic
-├── EmojiReactor - Main application orchestration
-└── main() - Entry point
-```
 
 ## Dependencies
-
-- `opencv-python>=4.8.0` - Computer vision library
-- `mediapipe>=0.10.13` - Pose and Face Mesh detection
-- `numpy>=1.24.0` - Numerical computing
-- `pillow>=10.0.0` - Image processing
-
 See `pyproject.toml` for project configuration, `requirements.txt` for pip installation, and `uv.lock` for reproducible builds.
 
 ## License
