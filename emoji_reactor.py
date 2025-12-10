@@ -22,25 +22,27 @@ EMOJI_WINDOW_SIZE = (WINDOW_WIDTH, WINDOW_HEIGHT)
 SMILE_FILE = "catxd.png"
 PLAIN_FILE = "toletole.png"
 AIR_FILE = "aircat.png"
+ONE_HAND_FILE = "hmm.png"
 
 # Load emoji images
 try:
     smiling_emoji = cv2.imread(SMILE_FILE)
     straight_face_emoji = cv2.imread(PLAIN_FILE)
     hands_up_emoji = cv2.imread(AIR_FILE)
-
+    one_hand_emoji = cv2.imread(ONE_HAND_FILE)
     if smiling_emoji is None:
         raise FileNotFoundError(f"{SMILE_FILE} not found")
     if straight_face_emoji is None:
         raise FileNotFoundError(f"{PLAIN_FILE} not found")
     if hands_up_emoji is None:
         raise FileNotFoundError(f"{AIR_FILE} not found")
-
+    if one_hand_emoji is None:
+        raise FileNotFoundError(f"{ONE_HAND_FILE} not found")
     # Resize emojis
     smiling_emoji = cv2.resize(smiling_emoji, EMOJI_WINDOW_SIZE)
     straight_face_emoji = cv2.resize(straight_face_emoji, EMOJI_WINDOW_SIZE)
     hands_up_emoji = cv2.resize(hands_up_emoji, EMOJI_WINDOW_SIZE)
-    
+    one_hand_emoji = cv2.resize(one_hand_emoji, EMOJI_WINDOW_SIZE)
 except Exception as e:
     print("Error loading emoji images!")
     print(f"Details: {e}")
@@ -95,12 +97,15 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
             left_wrist = landmarks[mp_pose.PoseLandmark.LEFT_WRIST]
             right_wrist = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]
-
-            if (left_wrist.y < left_shoulder.y) or (right_wrist.y < right_shoulder.y):
+            right_index = landmarks[mp_pose.PoseLandmark.RIGHT_INDEX]
+            left_index = landmarks[mp_pose.PoseLandmark.LEFT_INDEX]
+            if (left_wrist.y < left_shoulder.y) and (right_wrist.y < right_shoulder.y):
                 current_state = "HANDS_UP"
+            elif (left_index.y < left_shoulder.y) or (right_index.y < right_shoulder.y):
+                current_state = "ONE_HAND_UP"
         
         # Check facial expression if hands not up
-        if current_state != "HANDS_UP":
+        if current_state not in ["HANDS_UP", "ONE_HAND_UP"]:
             results_face = face_mesh.process(image_rgb)
             if results_face.multi_face_landmarks:
                 for face_landmarks in results_face.multi_face_landmarks:
@@ -129,6 +134,9 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         elif current_state == "HANDS_UP":
             emoji_to_display = hands_up_emoji
             emoji_name = "🙌"
+        elif current_state == "ONE_HAND_UP":
+            emoji_to_display = one_hand_emoji
+            emoji_name = "✋"
         else:
             emoji_to_display = blank_emoji
             emoji_name = "❓"
