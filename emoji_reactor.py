@@ -27,8 +27,17 @@ Configuration:
 Adding new states:
     1. Add state name to StateName Literal type
     2. Add EmojiState instance to your config's states list with priority
-    3. Add detection logic to StateDetector (if needed)
+    3. Implement detect_<STATE_NAME> method in StateDetector (or subclass)
     4. Add corresponding emoji image file to project directory
+
+Customizing pose detection:
+    Each pose has its own detection method (e.g., detect_HANDS_UP, detect_THINKING).
+    To customize a pose, subclass StateDetector and override the corresponding method:
+    
+        class MyCustomDetector(StateDetector):
+            def detect_THINKING(self, frame_rgb) -> bool:
+                # Your custom thinking pose detection logic
+                return True  # or False
 """
 
 from dataclasses import dataclass
@@ -44,7 +53,7 @@ mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
 # Type definitions for type safety
-StateName = Literal['HANDS_UP', 'THINKING', 'CATXD', 'STRAIGHT_FACE']
+StateName = Literal['HANDS_UP', 'THINKING', 'EYEBROW_RAISED', 'CATXD', 'STRAIGHT_FACE']
 DetectorType = Literal['pose', 'face']
 DEFAULT_STATE = "STRAIGHT_FACE"
 
@@ -132,6 +141,13 @@ class DefaultEmojiConfig(EmojiConfig):
                 detector='pose'
             ),
             EmojiState(
+                name='EYEBROW_RAISED',
+                image_file='pics/eyebrow_raised.jpg',
+                emoji='🤨',
+                priority=15,
+                detector='face'
+            ),
+            EmojiState(
                 name='CATXD',
                 image_file='pics/catxd.png',
                 emoji='😂',
@@ -185,7 +201,17 @@ class ImageManager:
 
 
 class StateDetector:
-    """Detects current state based on pose and face landmarks."""
+    """
+    Detects current state based on pose and face landmarks.
+    
+    Each pose can be implemented individually by overriding the corresponding
+    detection method (e.g., detect_HANDS_UP, detect_THINKING).
+    
+    To add a new pose:
+    1. Add the state name to StateName type
+    2. Implement detect_<STATE_NAME> method that returns bool
+    3. The method will be called automatically based on config
+    """
 
     def __init__(self, config):
         self.config = config
@@ -201,6 +227,10 @@ class StateDetector:
             max_num_faces=1,
             min_detection_confidence=config.min_detection_confidence
         )
+        
+        # Cache for pose landmarks (computed once per frame)
+        self._cached_pose_results = None
+        self._cached_face_results = None
 
     def detect_state(self, frame_rgb):
         """
@@ -208,52 +238,167 @@ class StateDetector:
         Returns: state_name (str)
         """
         detected_states = []
+        
+        # Process MediaPipe models once per frame
+        self._cached_pose_results = self.pose.process(frame_rgb)
+        self._cached_face_results = self.face_mesh.process(frame_rgb)
 
-        # Check pose-based states
-        pose_state = self._check_pose_state(frame_rgb)
-        if pose_state:
-            detected_states.append(pose_state)
+        # Check pose-based states (sorted by priority)
+        pose_states = [s for s in self.config.states if s.detector == 'pose']
+        for state in sorted(pose_states, key=lambda x: x.priority, reverse=True):
+            detector_method = getattr(self, f'detect_{state.name}', None)
+            if detector_method and callable(detector_method):
+                if detector_method(frame_rgb):
+                    detected_states.append(state.name)
+                    # Stop at first detected pose (highest priority)
+                    break
 
         # Check face-based states (only if no high-priority pose detected)
-        if not self._has_high_priority_pose(pose_state):
-            face_state = self._check_face_state(frame_rgb)
-            if face_state:
-                detected_states.append(face_state)
+        if not detected_states or not self._has_high_priority_pose(detected_states[0]):
+            face_states = [s for s in self.config.states if s.detector == 'face']
+            # Sort face states by priority, but ensure STRAIGHT_FACE is checked last
+            sorted_face_states = sorted(face_states, key=lambda x: x.priority, reverse=True)
+            # Separate STRAIGHT_FACE to check it as fallback
+            straight_face_state = next((s for s in sorted_face_states if s.name == 'STRAIGHT_FACE'), None)
+            other_face_states = [s for s in sorted_face_states if s.name != 'STRAIGHT_FACE']
+            
+            # Check other face states first
+            face_detected = False
+            for state in other_face_states:
+                detector_method = getattr(self, f'detect_{state.name}', None)
+                if detector_method and callable(detector_method):
+                    if detector_method(frame_rgb):
+                        detected_states.append(state.name)
+                        face_detected = True
+                        break
+            
+            # If no other face state matched, check STRAIGHT_FACE as fallback
+            if not face_detected and straight_face_state:
+                detector_method = getattr(self, f'detect_{straight_face_state.name}', None)
+                if detector_method and callable(detector_method):
+                    if detector_method(frame_rgb):
+                        detected_states.append(straight_face_state.name)
 
         # Return highest priority detected state, or default
         return self._get_highest_priority_state(detected_states)
 
-    def _check_pose_state(self, frame_rgb):
-        """Check for hands-up states."""
-        results = self.pose.process(frame_rgb)
-        if not results.pose_landmarks:
-            return None
+    # Individual pose detection methods - users can override these
+    
+    def detect_HANDS_UP(self, frame_rgb) -> bool:
+        """
+        Detect if both hands are raised above shoulders.
+        """
+        if not self._cached_pose_results or not self._cached_pose_results.pose_landmarks:
+            return False
 
-        landmarks = results.pose_landmarks.landmark
+        landmarks = self._cached_pose_results.pose_landmarks.landmark
         left_shoulder = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
         right_shoulder = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
         left_wrist = landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST]
         right_wrist = landmarks[self.mp_pose.PoseLandmark.RIGHT_WRIST]
+
+        return (left_wrist.y < left_shoulder.y) and (right_wrist.y < right_shoulder.y)
+
+    def detect_THINKING(self, frame_rgb) -> bool:
+        """
+        Detect thinking pose (hand near chin/face and above shoulder).
+        """
+        if not self._cached_pose_results or not self._cached_pose_results.pose_landmarks:
+            return False
+
+        landmarks = self._cached_pose_results.pose_landmarks.landmark
+        left_shoulder = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
         left_index = landmarks[self.mp_pose.PoseLandmark.LEFT_INDEX]
         right_index = landmarks[self.mp_pose.PoseLandmark.RIGHT_INDEX]
 
-        # Check both hands up
-        if (left_wrist.y < left_shoulder.y) and (right_wrist.y < right_shoulder.y):
-            return 'HANDS_UP'
+        # Try to get face landmarks for precise detection
+        if self._cached_face_results and self._cached_face_results.multi_face_landmarks:
+            for face_landmarks in self._cached_face_results.multi_face_landmarks:
+                chin = face_landmarks.landmark[18]  # Chin tip
+                
+                # Check left hand
+                if self._is_hand_near_chin(left_index, left_shoulder, chin):
+                    return True
+                
+                # Check right hand
+                if self._is_hand_near_chin(right_index, right_shoulder, chin):
+                    return True
+        
+        # Fallback: if face not detected, check if hand is raised above shoulder
+        return (left_index.y < left_shoulder.y) or (right_index.y < right_shoulder.y)
 
-        # Check one hand up
-        if (left_index.y < left_shoulder.y) or (right_index.y < right_shoulder.y):
-            return 'THINKING'
+    def detect_EYEBROW_RAISED(self, frame_rgb) -> bool:
+        """
+        Detect if exactly one eyebrow is raised (either left or right, but not both).
+        
+        Uses multiple checks to ensure resilience:
+        1. One eyebrow must be significantly higher than the other
+        2. The raised eyebrow must be above its eye baseline
+        3. The other eyebrow must be at or below its baseline
+        """
+        if not self._cached_face_results or not self._cached_face_results.multi_face_landmarks:
+            return False
 
-        return None
+        for face_landmarks in self._cached_face_results.multi_face_landmarks:
+            # Eyebrow landmarks (MediaPipe face mesh)
+            # Left eyebrow: outer (107), inner (55), middle points (65, 52, 53, 46)
+            # Right eyebrow: outer (336), inner (296), middle points (334, 293, 301, 368)
+            left_eyebrow_outer = face_landmarks.landmark[107]
+            left_eyebrow_inner = face_landmarks.landmark[55]
+            left_eyebrow_mid1 = face_landmarks.landmark[65]
+            left_eyebrow_mid2 = face_landmarks.landmark[52]
+            
+            right_eyebrow_outer = face_landmarks.landmark[336]
+            right_eyebrow_inner = face_landmarks.landmark[296]
+            right_eyebrow_mid1 = face_landmarks.landmark[334]
+            right_eyebrow_mid2 = face_landmarks.landmark[293]
+            
+            # Eye landmarks for baseline reference
+            # Left eye top: 159, Right eye top: 386
+            left_eye_top = face_landmarks.landmark[159]
+            right_eye_top = face_landmarks.landmark[386]
+            
+            # Calculate average eyebrow height using multiple points for better accuracy
+            # Lower y = higher on face
+            left_eyebrow_avg_y = (
+                left_eyebrow_outer.y + left_eyebrow_inner.y + 
+                left_eyebrow_mid1.y + left_eyebrow_mid2.y
+            ) / 4
+            right_eyebrow_avg_y = (
+                right_eyebrow_outer.y + right_eyebrow_inner.y + 
+                right_eyebrow_mid1.y + right_eyebrow_mid2.y
+            ) / 4
+            
+            # Calculate the difference between eyebrows
+            # Positive if left is higher (lower y value), negative if right is higher
+            eyebrow_diff = left_eyebrow_avg_y - right_eyebrow_avg_y
+            
+            # Threshold for detection - focus on relative difference between eyebrows
+            # This is the most reliable indicator of a single eyebrow raise
+            min_eyebrow_diff = 0.018  # Minimum difference (one eyebrow noticeably higher)
+            
+            # Check if left eyebrow is significantly higher than right
+            left_raised = eyebrow_diff > min_eyebrow_diff
+            
+            # Check if right eyebrow is significantly higher than left
+            right_raised = eyebrow_diff < -min_eyebrow_diff
+            
+            # Return True if exactly one eyebrow is significantly higher than the other
+            return left_raised or right_raised
 
-    def _check_face_state(self, frame_rgb):
-        """Check for smile vs straight face."""
-        results = self.face_mesh.process(frame_rgb)
-        if not results.multi_face_landmarks:
-            return DEFAULT_STATE
+        return False
 
-        for face_landmarks in results.multi_face_landmarks:
+    def detect_CATXD(self, frame_rgb) -> bool:
+        """
+        Detect smiling face (mouth aspect ratio exceeds threshold).
+        
+        Override this method to customize CATXD detection.
+        """
+        if not self._cached_face_results or not self._cached_face_results.multi_face_landmarks:
+            return False
+
+        for face_landmarks in self._cached_face_results.multi_face_landmarks:
             # Landmark indices for mouth corners and lips
             left_corner = face_landmarks.landmark[291]
             right_corner = face_landmarks.landmark[61]
@@ -269,9 +414,28 @@ class StateDetector:
             if mouth_width > 0:
                 mouth_aspect_ratio = mouth_height / mouth_width
                 if mouth_aspect_ratio > self.config.smile_threshold:
-                    return 'CATXD'
+                    return True
 
-        return DEFAULT_STATE
+        return False
+
+    def detect_STRAIGHT_FACE(self, frame_rgb) -> bool:
+        """
+        Default state - always returns True if face is detected.
+        """
+        return (self._cached_face_results is not None and 
+                self._cached_face_results.multi_face_landmarks is not None)
+
+    # Helper methods for pose detection
+    
+    def _is_hand_near_chin(self, index, shoulder, chin, threshold=0.15) -> bool:
+        """
+        Check if hand is near chin and above shoulder.
+        """
+        # Calculate distance from hand to chin
+        hand_to_chin_distance = ((index.x - chin.x)**2 + (index.y - chin.y)**2)**0.5
+        
+        # Check if hand is near chin and above shoulder
+        return (hand_to_chin_distance < threshold) and (index.y < shoulder.y)
 
     def _has_high_priority_pose(self, pose_state):
         """Check if pose state has higher priority than face states."""
