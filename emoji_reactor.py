@@ -53,7 +53,7 @@ mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
 # Type definitions for type safety
-StateName = Literal['HANDS_UP', 'THINKING', 'EYEBROW_RAISED', 'CATXD', 'STRAIGHT_FACE']
+StateName = Literal['HANDS_UP', 'THINKING', 'NERD', 'EYEBROW_RAISED', 'CATXD', 'STRAIGHT_FACE']
 DetectorType = Literal['pose', 'face']
 DEFAULT_STATE = "STRAIGHT_FACE"
 
@@ -131,6 +131,13 @@ class DefaultEmojiConfig(EmojiConfig):
                 image_file='pics/aircat.png',
                 emoji='🙌',
                 priority=40,
+                detector='pose'
+            ),
+            EmojiState(
+                name='NERD',
+                image_file='pics/nerd.png',
+                emoji='🤓',
+                priority=35,
                 detector='pose'
             ),
             EmojiState(
@@ -327,6 +334,50 @@ class StateDetector:
         
         # Fallback: if face not detected, check if hand is raised above shoulder
         return (left_index.y < left_shoulder.y) or (right_index.y < right_shoulder.y)
+
+    def detect_NERD(self, frame_rgb) -> bool:
+        """
+        Detect nerd pose (one index finger pointing upward, NOT near face).
+        
+        Checks if an index finger is pointing up, but excludes cases where hand is near face
+        (those should be THINKING instead).
+        """
+        if not self._cached_pose_results or not self._cached_pose_results.pose_landmarks:
+            return False
+
+        landmarks = self._cached_pose_results.pose_landmarks.landmark
+        left_shoulder = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        left_index = landmarks[self.mp_pose.PoseLandmark.LEFT_INDEX]
+        right_index = landmarks[self.mp_pose.PoseLandmark.RIGHT_INDEX]
+        left_wrist = landmarks[self.mp_pose.PoseLandmark.LEFT_WRIST]
+        right_wrist = landmarks[self.mp_pose.PoseLandmark.RIGHT_WRIST]
+
+        # Threshold for "finger pointing up" - finger must be significantly above wrist
+        finger_up_threshold = 0.03  # Normalized coordinates - finger must be clearly extended upward
+        
+        # Check if left finger is pointing up
+        left_finger_up = (left_index.y < left_wrist.y - finger_up_threshold)
+        
+        # Check if right finger is pointing up
+        right_finger_up = (right_index.y < right_wrist.y - finger_up_threshold)
+        
+        # If finger is pointing up, check that hand is NOT near face (to avoid conflict with THINKING)
+        if left_finger_up or right_finger_up:
+            if self._cached_face_results and self._cached_face_results.multi_face_landmarks:
+                for face_landmarks in self._cached_face_results.multi_face_landmarks:
+                    chin = face_landmarks.landmark[18]  # Chin tip
+                    
+                    # If hand is near face, this should be THINKING, not NERD
+                    if left_finger_up and self._is_hand_near_chin(left_index, left_shoulder, chin):
+                        return False
+                    if right_finger_up and self._is_hand_near_chin(right_index, right_shoulder, chin):
+                        return False
+            
+            # Finger is pointing up and NOT near face - this is NERD
+            return True
+        
+        return False
 
     def detect_EYEBROW_RAISED(self, frame_rgb) -> bool:
         """
