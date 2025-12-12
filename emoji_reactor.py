@@ -128,7 +128,7 @@ class DefaultEmojiConfig(EmojiConfig):
         self.states: list[EmojiState] = [
             EmojiState(
                 name='HANDS_UP',
-                image_file='pics/aircat.png',
+                image_file='pics/handsup.jpg',
                 emoji='🙌',
                 priority=40,
                 detector='pose'
